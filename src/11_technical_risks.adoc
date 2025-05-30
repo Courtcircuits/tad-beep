@@ -1,0 +1,29 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-technical-risks]]
+== Risks and Technical Debts
+
+=== ACID properties
+
+Maintaining ACID (Atomicity, Consistency, Isolation, Durability) properties in a distributed system without the use of message queues presents significant challenges, particularly as the system scales and the complexity of transactions increases. Atomicity, which ensures that transactions are completed entirely or not at all, becomes difficult to guarantee when multiple services need to coordinate actions across different databases or data stores. Without message queues to manage and sequence these transactions, the risk of partial failures increases, potentially leaving the system in an inconsistent state.
+
+Consistency, which requires that a transaction brings the database from one valid state to another, is similarly challenging to maintain. In a distributed environment, ensuring that all parts of the system see the same data at the same time is non-trivial. Message queues help by serializing access to shared resources and ensuring that updates are propagated in a controlled manner. Without them, race conditions and conflicts can arise, leading to inconsistencies that are difficult to detect and resolve.
+
+Isolation, the property that ensures transactions are executed in isolation from one another, is also harder to achieve without message queues. In a highly concurrent environment, transactions can interfere with each other, leading to dirty reads, non-repeatable reads, or phantom reads. Message queues can help manage the flow of transactions and ensure that they are processed in a way that maintains isolation. Without this mechanism, developers must implement complex locking and concurrency control strategies, which can be error-prone and difficult to maintain.
+
+Finally, Durability, which guarantees that once a transaction has been committed, it will remain so even in the event of a system failure, is challenging to ensure without message queues. Message queues provide a buffer that can hold transactions until they are safely processed and stored, even if parts of the system go offline. Without this buffer, transactions in flight can be lost during failures, leading to data loss and inconsistency.
+
+In summary, message queues play a crucial role in managing the complexities of distributed transactions and ensuring that ACID properties are maintained. Without them, developers must rely on more complex and potentially less reliable mechanisms to achieve the same level of data integrity and consistency.
+
+=== Designing asynchronous APIs without message queues
+
+Designing asynchronous systems without message queues presents substantial challenges, particularly in terms of scalability and the effective implementation of asynchronous events. Scalability in distributed systems relies heavily on the ability to decouple components, allowing them to operate independently and at their own pace. Message queues facilitate this decoupling by acting as a buffer between producers and consumers, absorbing load spikes and enabling components to scale horizontally. Without message queues, systems often struggle to manage varying loads, leading to bottlenecks and degraded performance as the number of concurrent operations increases.
+
+Implementation of asynchronous events becomes significantly more complex without message queues. In an asynchronous system, events such as user actions, system notifications, or data updates need to be processed in a non-blocking manner to ensure responsiveness and efficiency. Message queues simplify this by providing a reliable mechanism to enqueue events and ensure they are processed in the correct order and at the appropriate time. Without this mechanism, developers must implement custom solutions to handle event sequencing, retry logic, and error handling, which can be error-prone and difficult to maintain.
+
+Furthermore, message queues provide built-in support for features such as dead-letter queues, delayed messages, and priority queues, which are essential for robust asynchronous processing. These features help manage failures, retries, and prioritization, ensuring that the system remains resilient and responsive under varying conditions. Without message queues, developers must build these capabilities from scratch, adding layers of complexity and potential points of failure to the system.
+
+
+ifdef::arc42help[]
+
+endif::arc42help[]

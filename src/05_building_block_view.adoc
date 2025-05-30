@@ -1,0 +1,18 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-building-block-view]]
+
+
+== Building Block View
+
+This section describes the interaction of each microservices with the rest of the system, and comprising the user.
+
+=== Whitebox Beep system
+
+ifdef::arc42help[]
+
+endif::arc42help[]
+
+_**<Overview Diagram>**_
+
+image:whitebox-beep.png[Whitebox Beep system]

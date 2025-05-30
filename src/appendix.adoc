@@ -1,0 +1,6 @@
+== Appendix
+
+=== POCS
+
+search engine + inter communication -> chat.courtcircuit.xyz
+auth -> auth.courtcircuit.xyz

@@ -1,0 +1,11 @@
+{
+  "name": "quickwit",
+  "type": "infrastructure",
+  "url": "github.com/optique-dev/modules/quickwit",
+  "ignore": [
+    "go.mod",
+    "go.sum",
+    "*_test.go"
+  ],
+  "scripts": null
+}

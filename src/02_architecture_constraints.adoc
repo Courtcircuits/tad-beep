@@ -1,0 +1,490 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-architecture-constraints]]
+== Architecture Constraints
+
+In this section we will define the architecture constraints. In other words, we will define how we split the different domains of Beep into different microservices. What patterns were used to do that and finally which programming tools, languages and protocols must be used.
+
+=== Breaking down the Beep monolith
+
+As defined in the <<section-introduction-and-goals>>, we defined nine domains in Beep. 
+
+image:domains.png[Beep domains]
+
+Each of these domains have their own data model and business rules. However some of them share the same technical constraints. We will go other every of these domains explicitly define these constraints so we can better pick the right micro-service definition.
+
+==== 1. Authentication
+
+The authentication domain needs to be extended to handle multiple authentications methods while keeping security features that we implemented previously, such as multi-factor authentication.
+We will be using OAuth2 for the authentication part and we will need to implement a JWT token to handle the authentication. JWT help us keeping the infrastructure stateless since by design it is a distributed proof of identity. We will be using Keycloak as an implementation of OAuth2. Also we will be handling several identity provides : 
+* Montpellier University LDAP
+* Google
+
+
+==== 2. Messages
+
+The message domain is the one in charge of handling the messages. Messages are really simple since they are just a text with a timestamp a writer and a channel. They can be stored in any kind of database, however they need to be retrieved based on their channel ID. Actually, a message need to belong to a user and a channel. 
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+classDiagram
+  User "1" --> "*" Channel : member
+  Channel "1" --> "*" Message : has
+  Message "1" --> "1" User : has
+  class User {
+    id: string
+    username: string
+    email: string
+  }
+  class Channel {
+    id: string
+    name: string
+    description: string
+  }
+  class Message {
+    id: string
+    text: string
+    timestamp: string
+    owner: User
+    channel: Channel
+  }
+....
+Also messages need to be retrieved based on their content, their owner name, etc. Thus we will need to use a search engine to handle this kind of queries. Each queries are scoped to the channel. Messages must be sent in real-time thus the service that will handle this domain must include real time exchange protocols such as gRPC, WebSocket, SSE...
+
+==== 3. Channels
+
+Channels are an important part of Beep. A user subscribes to a channel by joining it. Then he can send messages to the channel. Thus a channel is a communication channel between users. They are the context in which messages are exchanged thus a message *need* to be in a channel.
+There are two types of channels : 
+
+* Text messages channels : these channels are used to send text messages to a group of users.
+* Voice calls channels : these channels are used to perform real time voice calls between users.
+* Folder channels : these channels are used to group text channels and voice channels. They don't contain messages per se but they are used to regroup channels.
+
+A channel contains an ID, a description, a name, a list of users that are members of the channel and a list of messages that are sent in the channel. The members of a channel have a set of customizable roles/permissions.
+
+==== 4. Servers
+
+Servers are the entities that can host communities. They are the equivalent of a server in a chat application. A server can host several channels. If we keep it simple, a server is an aggregation of channels. Each servers have members and just like channels, servers provide a system of authorization.
+
+They have an ID, a name, a description, a list of users that are members of the server and a list of channels that are hosted by the server. The members of a server have a set of customizable roles/permissions.
+
+==== 5. Users
+
+Users are the entities that can send messages to channels and servers. They are the equivalent of a user in a chat application. Each user has a username, a first name, a last name, an email, a profile picture, a banner, a status, a connection status and a biography. 
+
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+classDiagram
+    UserIdentity "1" -- "1" OIDCIdentity
+	OIDCIdentity --* Provider
+    note for UserIdentity "Stored in the user service"
+    note for OIDCIdentity "Stored in keycloak, about the userIdentityIdentifier, it must be unique"
+    class UserIdentity {
+        + firstName : string
+        + lastName : string
+        + email : string
+        + userHandle : string
+        + identifier : string
+        + profilePicture : string
+        + banner : string
+        + status : string
+        + connectionStatus : boolean
+        + biography : string
+    }
+
+    class OIDCIdentity {
+        + userIdentityIdentifier: string
+        + firstName: string
+		+ provider: Provider
+        + lastName: string
+        + email: string
+        + id: string
+    }
+	class Provider{
+		<<enum>>
+		LDAP,VANILLA,GOOGLE
+	}
+....
+
+==== 6. Voice calls
+
+Voice calls are communications channels used to exchange audio and video data between users leveraging the WebRTC protocol.
+
+==== 7. Files
+
+Files are a way to share documents with other users. They can be attached to messages but can also be profile pictures, banneers, etc.
+
+==== 8. Automations
+
+Automations are a way to send messages automatically to a channel. They are like fake users accessible through webhooks. A webhook is a method of augmenting or altering the behavior of a web page or web application with custom callbacks. These callbacks can be maintained, modified, and managed by third-party users and developers who may not necessarily be affiliated with the original website or application.
+
+==== 9. Notifications
+
+Notifications are a way to make a user aware of something that happened in the platform. They are used to notify users about new messages, new channels, new servers, etc. By design, notifications need to be in real time and asynchronous a little bit like  messages but contrary to messages, they are highlighted in the application and they are not searchable through a search index.
+
+=== Microservices
+
+Based on the previous section, we can already see which domains share the same technical needs.
+
+=== Channel & Servers microservice
+
+First of all, we can already see that channels and servers share more or less the same data model and the same approach when it comes to permissions. Thus, they will be located in the same microservice. This will help making the search engine to discover servers because when looking for new servers we will be able to make aggregations based on channels.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+architecture-beta
+    group api(cloud)[ChannelServers]
+
+    service db(database)[Database] in api
+    service search(database)[SearchEngine] in api
+    service auth(server)[Authorization] in api
+    service server(server)[ChannelServersAPI] in api
+
+    db:L -- B:server
+    search:T -- R:server
+    auth:R -- L:server
+....
+
+==== Connection pools, messages and notification microservices
+
+Actually, messages and notifications share the same problem : they are both real time and asynchronous since users want to be notified while they are on the app without refreshing it, the same for messages. However notification can trigger mail send. So these two domains will share the same technologies but won't be in the same micro-services.
+
+===== Messages
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: Message microservice
+---
+architecture-beta
+    group api(cloud)[MessageService]
+
+    service db(database)[Database] in api
+    service search(database)[SearchEngine] in api
+    service connection(server)[ConnectionPool] in api
+    service message(server)[MessageAPI] in api
+
+    db:B -- R:message
+    search:T -- R:message
+    connection:R -- L:message
+....
+
+===== Notifications
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: Notification microservice
+---
+architecture-beta
+    group api(cloud)[NotificationService]
+
+    service db(database)[Database] in api
+    service mail(database)[MailServer] in api
+    service connection(server)[ConnectionPool] in api
+    service notification(server)[NotificationAPI] in api
+
+    db:B -- R:notification
+    mail:T -- R:notification
+    connection:R -- L:notification
+....
+
+===== Connection pools
+
+A connection pool is essentially a collection of bidirectional connections that services can utilize to establish connections. Unlike a pub/sub service, it is not designed to facilitate inter-service communications. While working on the implementation of a message server for my proof of concept (available on https://github.com/Courtcircuits/tad-beep#[GitHub]), I encountered challenges in creating a WebSocket server capable of broadcasting messages to all connected users. This highlighted the need for distributed bidirectional servers to ensure scalability of the WebSocket server, a functionality adeptly provided by https://www.phoenixframework.org/#[Phoenix Channels]. Essentially, connection pools act as services that other services can connect to when they need to broadcast messages across various channels.
+
+This concept is precisely utilized by the messages and notifications systems. The messages system broadcasts messages to specific channels, while the notifications system disseminates various types of notifications to groups of users. These user groups can be organized through channels defined by the notification service, enabling efficient and targeted communication.
+
+==== Users and authentication microservices
+
+There will be one microservice called users that will be in charge of both users and handling authentication strategies. This service will basically be a facade in front of keycloak. Will be in charge of storing identity user data.
+
+Also this service will be in charge of the friendships between users. This service will be in charge of storing friendships data but also of handling the friendship requests and private messages. This is done to keep the friends ACID.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: Users microservice
+---
+architecture-beta
+    group api(cloud)[UsersService]
+
+    service auth(server)[Keycloak] in api
+    service database(database)[Database] in api
+    service users(server)[UsersAPI] in api
+
+    auth:R -- L:users
+    database:L -- R:users
+....
+
+==== Automations and webhooks microservice
+
+Since webhooks are a special case were you need to save the callback URL, associate it to a channel, etc, we will need to have a dedicated microservice for webhooks. Also in the future we can easily imagine beep featuring bots a little bit like Discord do.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: Automations and webhooks microservice
+---
+architecture-beta
+    group api(cloud)[AutomationsWebhooksService]
+
+    service database(database)[Database] in api
+    service webhooks(server)[WebhooksAPI] in api
+
+    database:L -- R:webhooks
+....
+
+==== Voice calls
+
+This microservice will be in charge of managing WebRTC connections and media streams. It will be written in Phoenix to handle the signalling and will use Stunner to handle STUN/TURN network protocols. For more informations please refer to https://www.youtube.com/watch?v=Z4h5tSMxmZg&t=10s[Mathias's talk about WebRTC history in Beep].
+
+==== Files
+
+In the development of a scalable and efficient microservices architecture, the integration of MinIO for handling file storage presents a robust solution, particularly when interfaced through a dedicated file microservice. This file microservice, developed in Go, acts as a facade for MinIO, abstracting the complexities of direct interactions with the storage layer and providing a streamlined API for other services to consume. By employing this intermediary layer, both the user microservice and the message microservice can securely and efficiently manage file operations without being exposed to the underlying storage mechanics.
+
+The file microservice ensures that all access to MinIO is authenticated and authorized, thereby enforcing security protocols and safeguarding user data. When a user needs to access files, the user microservice interacts with the file microservice, which verifies the user's authentication credentials before proceeding with the request. Similarly, the message microservice can leverage this file microservice to store and retrieve file attachments associated with user messages, ensuring that all file operations are conducted within a secure and controlled environment.
+
+Using MinIO as the backbone for file storage offers several advantages, including high scalability, durability, and compatibility with the Amazon S3 API, which simplifies integration and migration efforts. The Go-based facade not only enhances performance through efficient handling of concurrent requests but also provides a clear and maintainable codebase. This architecture promotes a separation of concerns, where each microservice can focus on its core functionality while delegating file storage responsibilities to a specialized service, thereby fostering a modular and maintainable system design.
+
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: File microservice
+---
+architecture-beta
+    group api(cloud)[FileService]
+
+    service minio(server)[MinIO] in api
+    service file(server)[FileAPI] in api
+
+    minio:R -- L:file
+....
+
+==== Gateway
+
+To ease the front-end integration, we will need to have a gateway. We will be using GraphQL to handle this part and map each domain to the right microservice. GraphQL through its subscription system
+makes it possible to push real-time updates to clients, which is essential for real-time communications. This approach also allows for efficient caching and data retrieval, improving the overall performance of the application.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+---
+title: Gateway
+---
+architecture-beta
+    group api(cloud)[Gateway]
+
+    service users(server)[UsersService] in api
+    service channels(server)[ChannelsService] in api
+    service servers(server)[ServersService] in api
+    service messages(server)[MessagesService] in api
+    service notifications(server)[NotificationsService] in api
+    service voicecalls(server)[VoiceCallsService] in api
+    service files(server)[FilesService] in api
+    service automations(server)[AutomationsService] in api
+    service webhooks(server)[WebhooksService] in api
+    service gateway(server)[GatewayAPI] in api
+
+    users:R -- L:gateway
+    channels:R -- L:gateway
+    servers:R -- L:gateway
+    messages:R -- L:gateway
+    notifications:R -- L:gateway
+    voicecalls:R -- L:gateway
+    files:R -- L:gateway
+    automations:R -- L:gateway
+    webhooks:R -- L:gateway
+....
+
+=== Technological stack
+
+==== Languages and frameworks
+
+We will be using the following languages and frameworks:
+
+* Go : to implement the codebase of the services with the help of the https://github.com/optique-dev/#[Optique framework]. Optique is a modular framework that allows developers to build scalable and maintainable microservices with ease. It provides a set of tools and libraries that simplify the development process, including a powerful dependency injection system, a pluggable middleware system, and a flexible configuration system. The framework also includes a built-in web server, which makes it easy to develop and deploy microservices.
+* Typescript : to implement the front-end of the application with the help of https://www.typescriptlang.org/[TypeScript]. TypeScript is a superset of JavaScript that adds optional static typing to the language. It is designed to be a better JavaScript language that scales with modern web development. TypeScript helps developers catch errors early and write more reliable code.
+* Elixir : to implement the WebRTC server with the help of https://github.com/membraneframework/membrane/[Membrane] and https://github.com/membraneframework/webrtc_engine/[WebRTC Engine]. Membrane is a framework for building scalable and fault-tolerant applications. It provides a set of tools and libraries that simplify the development process, including a powerful dependency injection system, a pluggable middleware system, and a flexible configuration system. The framework also includes a built-in web server, which makes it easy to develop and deploy microservices.
+
+==== Inter-communication protocols
+
+
+In a distributed context, managing communication between microservices involves several key considerations. One of the first decisions to make is the protocol that will facilitate this communication. There are two primary options: REST API and gRPC. Each has its own advantages and trade-offs, and the choice depends on the specific requirements and constraints of the system.
+
+===== REST API
+
+The REST API protocol is widely used for communication between microservices using HTTP requests. It leverages standard HTTP verbs such as GET, POST, PUT, and DELETE to define the type of request and the expected response. One of the significant advantages of REST is its simplicity and ubiquity. Most developers are familiar with HTTP and REST, making it easier to implement and maintain. Additionally, REST is stateless, which aligns well with the stateless nature of microservices.
+
+Another benefit of REST is the ability to generate documentation and type-safe clients based on an API schema using OpenAPIv3. This can significantly improve developer productivity and ensure consistency across different services. Tools like Swagger can be used to generate interactive API documentation, which can be exposed via an endpoint such as `kubernetes.local/<my-service>/docs`. This documentation serves as a contract between services, clearly defining the expected inputs and outputs for each API endpoint.
+
+However, REST was not originally designed with type safety in mind. While tools like OpenAPIv3 and Swagger can help mitigate this, they add an additional layer of complexity. The contract between services is defined in a file called `docs/openapi.yaml`, which is used to generate both the documentation and the client. This approach ensures that all services adhere to the same contract, reducing the risk of mismatches and errors.
+
+===== gRPC
+
+gRPC is another protocol used for communication between microservices, leveraging the concept of Remote Procedure Calls (RPC). It is a type-safe and battle-tested protocol that has been widely adopted in the industry. gRPC uses Protocol Buffers (protobufs) as its interface definition language (IDL), which allows for efficient serialization and deserialization of data. This makes gRPC particularly suitable for high-performance and low-latency applications.
+
+One of the key advantages of gRPC is its type safety. The protocol ensures that the data types and structures are consistent across services, reducing the risk of errors and mismatches. Additionally, gRPC supports bi-directional streaming, which can be useful for real-time applications that require continuous data exchange.
+
+gRPC also offers built-in support for code generation. The protocol definitions can be used to generate client and server code in multiple languages, ensuring consistency and reducing the amount of boilerplate code. This can significantly improve developer productivity and ensure that all services adhere to the same contract.
+
+===== Choosing Between REST and gRPC
+
+While both REST and gRPC have their advantages, the choice between the two depends on the specific requirements and constraints of the system. REST is generally simpler and more widely adopted, making it a good choice for smaller projects or systems with simpler requirements. However, gRPC offers more advanced features and is better suited for larger, more complex systems that require high performance and low latency.
+
+So we will choose gRPC for the Beep project. Also the gRPC integration with Golang and Elixir is seamless and easy to use.
+
+Finally, the frontend will communication with the gateway through GraphQL thanks to the Apollo client. This will allow us to have a single source of truth for the data and make it easier to maintain and update, while keeping the communication typesafe.
+
+==== Databases 
+
+We will be using PostgreSQL as our database. PostgreSQL is widely regarded as one of the most powerful and reliable open-source relational database management systems available today. Its consistent top performance in various benchmarks underscores its efficiency and robustness, making it a preferred choice for developers and organizations alike. One of the key strengths of PostgreSQL is its extensive feature set, which includes support for complex queries, full-text search, JSONB for efficient storage and querying of JSON data, and advanced indexing techniques. These features enable PostgreSQL to handle a wide range of workloads, from simple web applications to complex data warehousing and analytics tasks.
+
+Beyond its technical capabilities, PostgreSQL's widespread adoption and active community contribute significantly to its appeal. Being well-known and extensively documented, PostgreSQL offers a wealth of resources, tutorials, and third-party tools that make it easier to use and integrate into various projects. This extensive ecosystem not only simplifies the development process but also ensures that users can find support and solutions to common challenges more readily.
+
+Moreover, PostgreSQL's adherence to SQL standards and its extensibility allow developers to customize and extend its functionality to meet specific needs. Whether it's through creating custom functions, data types, or extensions, PostgreSQL provides the flexibility to tailor the database environment to unique requirements. This combination of performance, flexibility, and community support makes PostgreSQL an outstanding choice for a wide array of database applications.
+
+==== Search engines
+
+There were a bunc of search engines available for the Beep project. I had to choose between ElasticSearch, Solr and Quickwit. But I chose Quickwit because it was the simplest and the most lightweight. Quickwit is a search engine that uses a simple and intuitive interface to allow users to search for content. It is designed to be easy to use and understand, making it a great choice for developers and non-technical users alike. Quickwit also offers a range of customization options, allowing users to tailor the search experience to their specific needs. This makes it a versatile and flexible solution for a wide range of applications.
+
+Also there is a boilerplate integration of Quickwit with the https://github.com/optique-dev/modules#[optique framework].
+
+==== Authorization system
+
+For the authorization system, we will be using Permify because it is a simple and easy to use solution. Permify is an open-source authorization system that provides a simple and intuitive way to manage user permissions and roles. It is designed to be easy to use and understand, making it a great choice for developers and non-technical users alike. Permify also offers a range of customization options, allowing users to tailor the authorization experience to their specific needs. This makes it a versatile and flexible solution for a wide range of applications.
+
+=== Logs management
+
+In a distributed context, ensuring observability through logs and traces is crucial for maintaining the health and performance of microservices. To achieve this, logs must be standardized across the system. Standardization ensures that logs can be processed consistently, regardless of the service that emitted them. Each log should contain several key pieces of information: a level of importance (such as DEBUG, INFO, WARNING, or ERROR), a timestamp indicating when the log was emitted, a body containing the log message, the name of the service that created the log, and the ID of the container that issued the log. This information is essential for understanding when and in which context an issue occurred, facilitating quicker incident resolution.
+
+Logs will be emitted by various sources. For example, there will be different types of access logs, including those coming from the load balancer, the service mesh, and the applications themselves. Each of these sources may have its own logging structure, but standardizing the format for application logging (which encompasses all logs produced by services coded by the development team) is a critical first step.
+
+==== Types of Logs
+
+===== Application Logs
+
+Application logs are generated by the services developed by the development team. These logs should adhere to a standardized format to ensure consistency and ease of processing. The format for application logs could be defined as follows:
+
+```json
+{
+  "level": "INFO",
+  "timestamp": "2023-10-01T12:34:56Z",
+  "service": "UserService",
+  "container_id": "abc123",
+  "message": "User authentication successful"
+}
+```
+
+This format includes the log level, timestamp, service name, container ID, and the log message. By adhering to this structure, logs can be easily parsed and analyzed, regardless of the service that generated them.
+
+===== Access Logs
+
+Access logs are crucial for tracking requests and responses within the system. They are typically generated by the load balancer, service mesh, and the applications themselves. Access logs should include information such as the request method, URL, response status, and response time. For example:
+
+```json
+{
+  "timestamp": "2023-10-01T12:34:56Z",
+  "service": "LoadBalancer",
+  "container_id": "def456",
+  "request_method": "GET",
+  "request_url": "/api/users",
+  "response_status": 200,
+  "response_time": 123
+}
+```
+
+Access logs help in identifying performance bottlenecks, tracking user activity, and diagnosing issues related to request handling.
+
+===== Audit Logs
+
+Audit logs are essential for tracking changes and actions within the system, especially those related to security and compliance. These logs should include information such as the action performed, the user who performed it, and the timestamp. For example:
+
+```json
+{
+  "timestamp": "2023-10-01T12:34:56Z",
+  "service": "AuthService",
+  "container_id": "ghi789",
+  "action": "USER_CREATED",
+  "user": "john.doe",
+  "details": "User john.doe created successfully"
+}
+```
+
+Audit logs are crucial for compliance and security audits, as they provide a detailed record of actions performed within the system.
+
+===== Error Logs
+
+Error logs are specifically designed to capture and record errors and exceptions that occur within the system. These logs should include information such as the error message, stack trace, and any relevant contextual information. For example:
+
+```json
+{
+  "level": "ERROR",
+  "timestamp": "2023-10-01T12:34:56Z",
+  "service": "PaymentService",
+  "container_id": "jkl012",
+  "message": "Payment processing failed",
+  "stack_trace": "java.lang.NullPointerException...",
+  "context": "User ID: 12345, Transaction ID: 67890"
+}
+```
+
+Error logs are essential for diagnosing and resolving issues quickly, as they provide detailed information about the errors that occur.
+
+==== Scenario: Incident Resolution with Audit and Access Logs
+
+Consider a scenario where users report issues with accessing a particular feature in the application. To diagnose the issue, the development team can use audit and access logs to trace the problem.
+
+1. **Access Logs**: The team reviews the access logs to identify any patterns or anomalies in the requests. They notice that requests to a specific endpoint are failing with a 500 status code.
+
+2. **Audit Logs**: The team then reviews the audit logs to see if there were any recent changes or actions that could have caused the issue. They discover that a recent configuration change was made to the service handling the failing endpoint.
+
+3. **Error Logs**: Finally, the team reviews the error logs to get more details about the failures. They find that the errors are related to a null pointer exception in the code, which was introduced by the recent configuration change.
+
+By correlating the information from access, audit, and error logs, the team can quickly identify the root cause of the issue and take corrective actions.
+
+

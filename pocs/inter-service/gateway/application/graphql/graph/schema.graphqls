@@ -1,0 +1,29 @@
+# GraphQL schema example
+#
+# https://gqlgen.com/getting-started/
+
+type Message {
+  id: ID!
+  content: String!
+  createdAt: String!
+  owner: String!
+  channelID: String!
+}
+
+type Query {
+  searchMessages(query: String!, channelID: String!): [Message!]!
+}
+
+input NewMessage {
+  content: String!
+  channel: String!
+  owner: String!
+}
+
+type Mutation {
+  sendMessage(message: NewMessage!): Message!
+}
+
+type Subscription {
+  getMessages(channelID: String!, ownerID: String!): [Message!]!
+}

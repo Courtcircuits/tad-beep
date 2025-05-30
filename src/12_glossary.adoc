@@ -1,0 +1,70 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-glossary]]
+== Glossary
+
+[cols="1,3"]
+|===
+| Term | Definition
+
+| User
+| A user of Beep whose identity has been registered.
+
+| Entity
+| An entity contains itself another component of Beep. For example, a server is an entity because it contains channels. Channels are an entity because they contain channels, messages, or voice calls.
+
+| Server
+| An entity that helps to regroup channels.
+
+| Channels
+| An entity that contains either channels, messages, or a voice call.
+
+| Text Channel
+| A channel that only contains texts.
+
+| Voice Channel
+| A channel that enables voice calls.
+
+| Folder Channel
+| A channel that contains channels.
+
+| Message
+| A text that is sent to another user and that might contain an attachment file.
+
+| File
+| It can be either a binary, image, video, text, etc., that can be stored in a computer filesystem.
+
+| Member
+| A member is part of an entity. It has associated rights and is associated with a user.
+
+| Voice Call
+| A connection between users to support real-time audio calls and video calls.
+
+| Notification
+| An alert sent to a user making them aware of an event.
+
+| Istio
+| An open platform to connect, manage, and secure microservices. It provides a way to control the flow of traffic and API calls between services, as well as a policy enforcement and telemetry collection.
+
+| gRPC
+| A modern open-source high-performance Remote Procedure Call (RPC) framework that can run in any environment. It is used for communication between microservices in Beep.
+
+| Kubernetes
+| An open-source system for automating the deployment, scaling, and management of containerized applications. It helps in managing the microservices architecture of Beep.
+
+| PostgreSQL
+| An open-source relational database management system known for its robustness and performance. It is used as the primary database for Beep.
+
+| REST
+| Representational State Transfer, an architectural style for designing networked applications. It is used for communication between some components of Beep.
+
+| Microservices
+| A software development technique—a variant of the service-oriented architecture (SOA) structural style—that arranges an application as a collection of loosely coupled services. Beep is transitioning to this architecture.
+
+| OIDC
+| OpenID Connect, an identity layer built on top of the OAuth 2.0 protocol. It is used for authentication in Beep.
+
+| LDAP
+| Lightweight Directory Access Protocol, used for accessing and maintaining distributed directory information services over an Internet Protocol (IP) network. It is used for university credentials authentication in Beep.
+|===
+

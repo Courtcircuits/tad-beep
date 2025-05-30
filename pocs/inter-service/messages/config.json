@@ -1,0 +1,17 @@
+{
+  "bootstrap": false,
+  "quickwit": {
+    "endpoint": "http://localhost:7280"
+  },
+  "sql": {
+    "migrations": "./migrations",
+    "username": "postgres",
+    "password": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "messages"
+  },
+  "grpc": {
+    "listen_addr": "0.0.0.0:4001"
+  }
+}

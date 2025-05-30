@@ -1,0 +1,193 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-runtime-view]]
+== Runtime View
+
+In this section we will focus on the runtime view of the system. The runtime view describes the interactions of the building block instances with each other and their runtime environment. The figures below show the main interactions of our system at runtime.
+
+=== Authentication runtime diagrams
+
+==== User creates an account on beep - password flow
+
+In this case, the user data is coming from a registration form in the frontend.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Beep User service: POST /auth/register (user data)
+    Beep User service->> Database: INSERT user
+    Database-->>Beep User service: OK (user id)
+    Beep User service->>Keycloak: POST /auth/realms/Beep/protocol/openid-connect/token
+    Keycloak-->>Beep User service: 200 OK (access token)
+    Beep User service->>Keycloak: POST create user {firstName, lastName, email, userIdentifier}
+    Keycloak->>Beep User service: 200 OK
+    Beep User service->>User: 201 OK
+....
+
+
+==== User logs in to beep - password flow
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Beep User service: POST /auth/login (user data)
+    Beep User service->> Database: SELECT user
+    Database-->>Beep User service: OK (user)
+    Beep User service->>Keycloak: POST /auth/realms/Beep/protocol/openid-connect/token
+    Keycloak-->>Beep User service: 200 OK (access token)
+    Beep User service->>User: 200 OK
+....
+
+==== User logs in to beep - LDAP flow
+LDAP is a user federation protocol that allows to manage user identities from a centralized directory. The integration with keycloak consists in importing the user data from the LDAP directory into keycloak thus by default, every Polytech student will have an identity in Beep. Still, by default they won't be considered as fully registered since the _User service_ won't register their identity.
+A user will only be created if they try to log into Beep with their polytech account.
+
+Note that before hand, keycloak will contain the polytech user id and password since they will be imported from the LDAP thanks to LDAP integration.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+	User->>Keycloak: User tries to sign in
+	Keycloak-->>User: 200 Ok (access token)
+	User->>User service: GET any requests containing its access token
+	User service->>Database: Checks if user identity exists
+	Database-->>User service: No user doesn't exist
+	alt IdentityProvider=="LDAP"
+		User service->>Database: Create User identity
+		Database-->>User service: OK (user id)
+		User Service-->>User: 200 ok
+	else
+		User serivce->>User: 403
+	end
+....
+
+As you can see on the diagram, if the IdentityProvider is LDAP, then it will create an identity in the user service.
+
+==== User logs in to beep - social login flow
+
+
+===== User creates beep account (google)
+
+In this case, the user data is retrieved from google thanks to the openid connect protocol.
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Beep User service: POST /auth/register (user data)
+    Beep User service->> Database: INSERT user
+    Database-->>Beep User service: OK (user id)
+    Beep User service->>Keycloak: POST /auth/realms/Beep/protocol/openid-connect/token
+    Keycloack->>Google: POST /o/oauth2/v2/userinfo
+    Google-->>Keycloak: 200 OK (user data)
+    Keycloak-->>Beep User service: 200 OK (access token)
+    Beep User service->>Keycloak: POST create user {firstName, lastName, email, userIdentifier}
+    Keycloak->>Beep User service: 200 OK
+    Beep User service->>User: 201 OK
+....
+
+=== Server runtime diagrams
+
+==== User creates a server
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Gateway: mutation{CreateServer(...){...}} (graphQL)
+    Gateway->>ChannelServer: createServer(....) (gRPC)
+    ChannelServer->>Database: INSERT server (TCP)
+    Database-->>ChannelServer: RETURNING server
+    ChannelServer->>Database: INSERT channel (TCP)
+    Database->>ChannelServer: RETURNING channel (TCP)
+    ChannelServer->>Quickwit: createServerIndex(...) (HTTP)
+    ChannelServer->>Messages: createChannel(...) (gRPC)
+    Messages->>QuickwitMessages: createChannelIndex(...) (HTTP)
+....
+
+Here we can see that the user creates a server by calling the `createServer` method of the `ChannelServer` service. This method creates a new server in the database and then calls the `createServerIndex` method of the `Quickwit` service to create an index for the server. The `createServerIndex` method sends a request to the Quickwit server to create an index for the server. The index is created by sending a POST request to the `/server` endpoint of the Quickwit server with the server data as the request body.
+
+We need to create a new channel in the message service because the message service need to open a Phoenix channel to handle the messages of this channel. 
+
+==== User creates a new role
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Beep User service: POST /auth/login (user data)
+    Beep User service->>Keycloak: POST /auth/realms/Beep/protocol/openid-connect/token
+    Keycloak-->>Beep User service: 200 OK (access token)
+    User->>Gateway: mutation{CreateRole(...){...}} (graphQL)
+    Gateway->>Beep server service: createRole(...) (gRPC)
+    Beep server service->>Permify: check if user is allowed
+    Permify-->>Beep server service: OK
+    Beep server service->>Permify: create role
+    Permify-->>Beep server service: OK
+    Beep server service->>Beep User service: 200 OK
+    Beep server service->>User: 201 OK
+....
+
+The sequence diagram illustrates the authentication and role creation flow within the Beep application. Initially, a user sends a login request with their credentials to the Beep User service. The Beep User service then communicates with Keycloak, an identity and access management solution, to obtain an access token. Upon successful authentication, Keycloak returns an access token to the Beep User service.
+
+Next, the user sends a GraphQL mutation request to the Gateway to create a new role. The Gateway forwards this request to the Beep Server service using gRPC. The Beep Server service then checks with Permify, an authorization service, to verify if the user has the necessary permissions to create a role. If the user is authorized, Permify responds affirmatively, and the Beep Server service proceeds to create the role in Permify.
+
+After the role is successfully created, Permify confirms the action to the Beep Server service. The Beep Server service then notifies the Beep User service of the successful operation and returns a confirmation to the user, completing the process.
+
+==== User sends a message in a channel in a server
+
+ifdef::env-github[]
+[source,mermaid]
+endif::[]
+ifndef::env-github[]
+[mermaid]
+endif::[]
+....
+sequenceDiagram
+    User->>Gateway: mutation{SendMessage(...){...}} (graphQL)
+    Gateway->>Keycloak: POST /auth/verify/user
+    Keycloak-->>Gateway: 200 OK
+    Gateway->>Beep server service: sendMessage(...) (gRPC)
+    Beep server service->>Permify: check if user is allowed
+    Permify-->>Beep server service: OK
+    Beep server service->>Messages: sendMessage(...) (gRPC)
+    Messages->>Database: INSERT message
+    Messages->>QuickwitMessages: sendMessage(...) (HTTP)
+    Messages->>Beep server service: 200 OK
+    Messages->>Phoenix: broadcast message
+    Beep server service->>Gateway: 200 OK
+....
+
+The sequence diagram outlines the process of sending a message within the Beep application. Initially, a user sends a GraphQL mutation request to the Gateway to send a message. The Gateway then communicates with Keycloak to verify the user's authentication by making a POST request to the /auth/verify/user endpoint. Upon successful verification, Keycloak responds with a 200 OK status, confirming the user's identity.
+
+Following this, the Gateway forwards the send message request to the Beep Server service using gRPC. The Beep Server service then checks with Permify, the authorization service, to ensure the user has the necessary permissions to send the message. If the user is authorized, Permify responds affirmatively.
+
+The Beep Server service then sends the message to the Messages service using gRPC. The Messages service inserts the message into the database and simultaneously sends the message to QuickwitMessages via an HTTP request for further processing or indexing.
+

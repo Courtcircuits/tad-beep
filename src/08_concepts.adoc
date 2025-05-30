@@ -1,0 +1,28 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-concepts]]
+== Cross-cutting Concepts
+
+From our feature list we can extract a domain specific vocabulary. You may have observed that some words were highlighted previously.
+
+- **user** : a user of Beep which identity has been registered.
+- **entity**: an entity contains itself another component of beep. For example, a server is an entity because it contains channels. **Channels** are an entity because it contains **channels**, **messages** or **voice calls**.
+- **server** : an entity that helps to regroup **channels**.
+- **channels** : an entity that contains either **channels**, **messages** or a **voice call**
+- **text channel** : a **channel** that only contains texts.
+- **voice channel** : a **channel** that enable **voice calls**
+- **folder channel** : a **channel** that contains **channels**.
+- **message** : a text that is sent to another **user** and that might contain an attachment **file**
+- **file** : it can be either a binary, image, video, text.... that can be stored in a computer filesystem.
+- **member** : a member is part of an **entity**. It has associated **rights** and is associated to a **user**.
+- **voice call** : a connection between **users** to support realtime audio calls + video calls.
+- **notification** : an alert sent to a user making him aware of an event.
+
+=== Defining the bounded contexts of the domains
+
+- **user** : everything that is related to identity management of the user.
+- **server** : managing the metadata of a server, the list of channels and its related policies.
+- **channels** : managing the metadata of channels and its related policies.
+- **message** : everything related to the management of messages through the application, the storage and its structure.
+
+

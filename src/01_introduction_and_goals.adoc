@@ -1,0 +1,172 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-introduction-and-goals]]
+== Introduction and Goals
+
+Beep is an open source project lead by Polytech DevOps students of 2023-2026 at the University of Montpellier. It is an alternative for Discord, a popular communication platform made for communities.
+
+We started this project in late 2023 as a way to learn more about the software development process and to get familiar with the tools we will use in the future in a bigger project context. 
+
+In short, the main features of Beep are: 
+
+* An efficient platform for the creation of communities providing advanced configuration options for permissions, styles and more.
+* A fast backend allowing to handle a large number of users and messages.
+* Secure authentication using multi-factor authentication.
+* Social features such as friendships and private messages.
+* A search engine allowing to discover communities and within communities to find users and messages.
+
+As of today, Beep was architected as a monolithic application, but we are currently having trouble with the scalability of the application and the codebase is becoming too complex. We are therefore planning to split the Beep application into multiple microservices, each one responsible for a specific function. This will allow us to scale the application more easily and improve the maintainability of the codebase.
+
+This design document provides an overview of how we are going to break Beep's monolithic codebase into smaller, more manageable components while improving the *security* and *resiliancy* of the platform.
+
+To not rush the migration, we chose to forbid usage of technologies like messages queues, CQRS or event sourcing. Thus we will try to keep Beep as synchronous as possible in order to keep the "ACIDity" of the infrastructure.
+
+=== Requirements Overview
+
+Before starting describing the technical details of Beep, let's first define in depth the features provided by Beep.
+
+==== Functional Requirements
+
+When defining the functional requirements, eight business domains were identified, in the followin section we will describe the features defining each of these domains.
+
+===== 1. Authentication
+
+*Definition*: A user is a person that uses Beep. Thus, a visitor can not be considered as a user since he is not registered on the platform.
+
+* As a visitor I can sign up to beep. I will provide my first name, last name, username, email, password and a picture of me.
+* Then I will be able to sign in by providing my email and password.
+* Eventually I will be able to activate the 2FA, so when I sign into beep I will be asked to enter 2FA code.
+* I also want to be able to log out so I can switch account. This part we will be detailled further on throught the second question since most of these feature are answered thanks to an OIDC.
+* As a Montpellier university student I want to be able to log in to Beep thanks to my university credentials through the LDAP access.
+* AS a visitor I want to be able to join Beep through Google authentication.
+
+===== 2. Servers
+
+*Definition*: A server is an entity that can host communities. It groups many users and messages in a single place and can be organized according to community needs.
+
+* As a user I want to be able to **discover public servers** thanks to a **search feature**.
+* Also I want to be able to join a **public server** so I can join a community.
+* Also I want to be able to join a **private server** thanks to either an **invitation link** OR an in-app invitation (not yet implemented).
+* Once in a server I want to be able to **see channels**, and **messages**, also I want to be able to **join voice calls**
+* As a user I want to create a server either **public** or **private** depending on the level of visibility I want. I want to be able to name my server to make it unique or at least recognizable.
+* As a **server admin**, I want to be able to add a name to the server, a picture, a banner and a description so my server becomes unique !
+* As a **server admin** I want to be able to manage everything a user can do **within** my server thanks to a role system. It means that every resources -> **message** and **channels** are impacted by these roles.
+* As a **server admin** I want to be able to destroy my server.
+* As a **server member** I want to be able to invite my friends to the server if its public. If it's private, I need to be an admin.
+
+===== 3. Channels
+
+*Definition*: A channel is an entity that can be used to send messages to a group of users. A user "subscribes" to a channel to receive messages from it and can also send messages to it so they are broadcasted to the member of the channel.
+
+* As a **server admin** I want to be able to create channels within a server.
+* Still as a **server admin** I want to be able to create **text channels** or **voice channels** to either send messages or discuss directly with my friends in vocal.
+* Things can get messy, so as a **server admin** I a want a system of **folder channels** to regroup text channels and voice channels.
+* As a **channel admin** I want to be able to edit its name.
+* As a **folder channel admin** I want to be able to edit its name.
+* As a **channel admin** I want to set who can see the channel, thus introducing **private channels**.
+*  As a **channel admin** I want to be able to delete a channel and if it's a folder channel, all its subsequent channels.
+* As a **channel member** I want to be able to see who are the other members and if they are connected in real time.
+
+===== 4. User
+
+* As a user I want to be able to **choose the language** of beep. For now either **english** or **french**.
+* I want to be able to select my **audio inputs** and **video inputs** for video calls.
+* I want to be able to change my **name, last name, username, email and profile picture**.
+* I want to be able to change my **password**.
+
+===== 5. Voice calls
+
+* I want to be able to join voice calls to chat with other beep users.
+* I want to be able to see who's in the voice call.
+* I want to be able to see my friends cameras and share my camera only if I want it.
+* I want to be able to share my screen to the people in the call.
+* I want to be able to mute myself when in a voice call.
+* I want to be able to leave a voice call.
+
+===== 6. Messages
+
+* I want to send a text message to other users.
+* I want to be able to **delete** my text messages. Or if I have enough right, delete other people messages
+* I want to be able to edit my text messages.
+* I want to be able to pin the current message to the channel where the conversation is to retrieve them later.
+* I want to be able to answer to any messages to keep a conversation.
+* I want to be able to see who sent a message and when.
+* I want my text messages to support markdown and youtube, spotify, twitter integration to preview links.
+* I want to be able to join files to my messages.
+* I want to be able to ping other users that are on the channel/server in a message by typing @<username\>
+* I want to be able to tag a channel with a \#<channel-name\>
+* I want to be notified when I'm pinged on a channel.
+* I want to be notified when receiving a message but with a level not as high as when I'm pinged.
+* I want to be able to snooze these notifications
+
+* I want to be able to reply to a message.
+* I want to be able to search for messages within channels.
+
+===== 7. Friends
+
+* I want to be able to discuss directly to other users thanks to a direct message system.
+* To manage my inbox, I want to be able to ask other users to be my friend
+* When someone asks me to be his friend, obviously I want to see the ask and see the asker identity
+* I want to deny or accept a friend ask.
+* I want to be able to remove friends so we are not friend anymore. This will automatically erase our conversation.
+* I want to be notified when receiving a friend ask.
+* I want to be able to snooze these notifications.
+
+===== 8. Automations
+
+* Message can be sent automatically to a channel thanks to webhooks
+* A user in a **channel** with the correct authorizations can create a webhook to automatically send messages to a channel
+* A webhook owner can delete it
+* A webhook owner can edit it
+
+
+==== Technical Requirements
+
+Now that we have defined the functional requirements, let's define the technical requirements by determining the amount of data we will need to manage.
+
+We are targeting users who are European students and are above 18 years old. We can assume that they either use a smartphone or a laptop. In general, they send 100 messages per day.
+
+In Europe in 2022, there were 18.2 million European students. If we reach 1% of that population, we could consider Beep a successful project. This means that we will deal with 182,000 messages per day. If a message is on average 100 characters, then we will have to store at least 18.2 million bytes of data, which is 0.0182 terabytes of data per day.
+
+This estimate does not include files or voice calls, but we can assume that taking them into account will multiply by a factor of 2 the amount of data we will need to store, since voice calls are only in transit data.
+
+Thus, per day, we will need to store 36.4 gigabytes of data. This is a lot of data considering that there is no budget for servers and that we will need to store it on servers that were lent to us by Polytech Montpellier.
+
+In terms of in-transit data, we will need to handle 100 messages per second. If we imagine that there are constantly two people talking in a voice call, then we will need to manage 100 messages per second. This means that we will need to handle 100 gigabytes of data per second. If we refer to this https://webrtc.github.io/samples/src/content/peerconnection/bandwidth/[WebRTC demo], we can estimate that the bandwidth taken by such a call is 1 Mbps. With a good compression algorithm, we can lower that to 200 Kbps. Thus, Beep will need an ingress bandwidth of 100.2 Gbps.
+
+=== Constraints
+
+Now that we have defined the functional requirements and the technical requirements, let's define our system constrants.
+As described before, we have at our disposal nine physical servers each with the same specifications : 
+
+* 2 CPUs
+* 64Gb RAM
+* Disks :
+** 1 X 256GB SSD
+** 2 X 1.2TB HDD
+
+These servers are hosted by Polytech Montpellier, a French public university. Thus we are bounded by the network limitations and policies of Polytech Montpellier.
+There are only a subset of UDP ports that can be used by Beep. Thankfully, these ports are the same as https://support.zoom.com/hc/fr/article?id=zm_kb&sysparm_article=KB0060563[Zoom's ports].
+
+=== Quality Goals
+
+We want Beep to be available to all users in Europe 95% of the time with a maximum response time of 500ms. However, based on the estimates that we made in the previous section, we won't be able to handle that ammount of money with the infrastructure that we have at our disposal. Thus we will set the max ammount of storage to 23 TB which corresponds to the total amount of space that can provide our infrastructure.
+
+Thus user data retention will be limited to 15 TB. We have to keep some space for logs retention for example.
+
+Roughly, our platform can store the data of **10 000 very active users** (meaning users that send 100 messages per day) which is approximately as much as the French Startup https://alan.com/?utm_source=google&utm_medium=ppc&utm_campaign=FR-FR_Conversion_Final_2023_ALL_Brand&utm_content={AdGroupName}&utm_term=alan&gad_source=1&gad_campaignid=17237897454&gclid=CjwKCAjwruXBBhArEiwACBRtHQEzp8mTf-s7v3PdjCAMKLNrU_ufbI0H-9Cg5nriK1FYPJ-tLVi2dBoCqR0QAvD_BwE[Alan].
+
+Regarding security, we must first define our infrastructure before establishing a https://www.threatmodelingmanifesto.org/[threat model]. Initially, we can affirm that user personal data will not be disclosed. External actors will be unable to access our infrastructure or data storage. Additionally, we aim to prevent users from creating an excessive number of servers or other entities. To ensure a smooth and secure transition to microservices, it is crucial to avoid several common pitfalls. We must ensure that each microservice is properly isolated to prevent issues in one service from affecting others, avoiding tight coupling that can lead to cascading failures. Caution must be exercised with data sharding to maintain data consistency and integrity across services, steering clear of inconsistent data handling practices that can result in data corruption or loss. Comprehensive logging, tracing, and monitoring should be implemented from the outset, as diagnosing issues in a distributed system without proper observability tools can be extremely challenging. Security measures such as encryption in transit, role-based access control, and secure authentication mechanisms must be in place from the beginning, avoiding the assumption that security can be addressed later. Load balancing should be managed carefully to distribute the load evenly across services, preventing any single service from becoming a bottleneck and ensuring optimal performance and user experience. Automated testing for individual services and their interactions should be implemented to avoid error-prone and time-consuming manual testing processes. By addressing these concerns proactively, we can enhance the security, scalability, and maintainability of our microservices architecture.
+
+=== Stakeholders
+
+ifdef::arc42help[]
+
+endif::arc42help[]
+
+[options="header",cols="1,2,2"]
+|===
+|Role/Name|Contact|Expectations
+| _Product Owner_ | _github.com/LeoFVO_ | _In charge of the product and its development_
+| _Documentation and Architecture consultant_ | _github.com/MonstyFred_ | _Responsible for the documentation and architecture_
+|===

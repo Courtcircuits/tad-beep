@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package messages;
+
+option go_package = "github.com/courtcircuit/tad-beep/pocs/inter-service/gateway/infrastructure/grpc";
+
+message MessageRequest {
+  string channelID = 1;
+  string ownerID = 2;
+  string content = 3;
+}
+
+message Message {
+  string messageID = 1;
+  string channelID = 2;
+  string ownerID = 3;
+  string content = 4;
+  string createdAt = 5;
+}
+
+message SearchQuery {
+  string channelID = 1;
+  string query = 2;
+}
+
+message GetMessagesQuery {
+  string channelID = 1;
+  string ownerID = 2;
+}
+
+service Messages {
+  rpc SendMessage (MessageRequest) returns (Message);
+  rpc GetMessages (GetMessagesQuery) returns (stream Message);
+  rpc SearchMessage (SearchQuery) returns (stream Message);
+}
+

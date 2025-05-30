@@ -1,0 +1,91 @@
+ifndef::imagesdir[:imagesdir: ../images]
+
+[[section-deployment-view]]
+
+
+== Deployment View
+
+Through this section we will see how the system looks like in deployment view. How the infrastructure is composed, what technologies are used to secure the system, and how we are keeping an eye on what's going on thanks to logging.
+
+Just as a reminder, we have at our disposal the following hardware infrastructure, nine servers with the specification : 
+
+* 2 CPUs
+* 64Gb RAM
+* Disks :
+** 1 X 256GB SSD
+** 2 X 1.2TB HDD
+
+These servers are hosted by Polytech Montpellier, a French public university.
+For development purpose, we want to have at least three environments : 
+
+* Development
+* Staging
+* Production
+
+Each environment need to be similar to the others, the only differences being the resource allocated to each environment.
+Each environment will be running on kubernetes.
+
+=== Infrastructure Level 1
+
+ifdef::arc42help[]
+
+endif::arc42help[]
+
+_**<Overview Diagram>**_
+
+image:whitebox-infrastructure.png[Whitebox Beep infrastructure]
+
+Motivation::
+
+The idea here is that we have three kubernetes clusters, one for each environment. The production cluster will have most resources with three dedicated nodes.
+Each cluster is considered as a DMZ since it is hard to isolate the different services thanks to specific network configurations, for example VLANS. But we will see later how we can do that at the kubernetes level.
+
+However, each kubernetes cluster will be monitored, thus the monitoring stack will generate a lot of data. This data needs to be stored somewhere, so we will be using a dedicated server for the data retention.
+
+Log data retention is important even in a development environment, since we will be developing and testing Beep. We will need to keep logs for debugging purposes.
+
+
+Quality and/or Performance Features::
+
+Putting the backups and log storage in dedicated servers that are only accessible by the kubernetes services will ensure that an attacker will have an harder time to access the data. That's the whole point of a DMZ.
+
+
+=== Infrastructure Level 2
+
+
+==== Focus on the Kubernetes Cluster
+
+image:kubernetes-cluster-focus.png[Kubernetes cluster focus]
+
+==== Load balancing
+Istio is a service mesh that also provides a reverse proxy. According to https://www.solo.io/blog/istio-grafana-k6#[this benchmark], Istio can serve around 4,000 requests per second on a 1 CPU server, and this metric can go up to 25,000 requests per second on an 8 CPU server. Given our hardware infrastructure, we can handle at least 100,000 requests per second, which is significantly more than the estimated volumetry of 333 messages per second.
+
+To further optimize load balancing, we will use Kubernetes to automatically scale the number of pods based on the load. Rate limiting will be implemented to prevent abuse and ensure fair usage of resources. Caching mechanisms will be used to reduce the load on the backend servers. Circuit breakers will be implemented to prevent cascading failures. These strategies will help distribute the load evenly and maintain the performance of the Beep application.
+
+===== Inter-service network security
+
+The Kubernetes cluster operates within a Demilitarized Zone (DMZ), necessitating robust security measures for inter-service network communications. To address this, we will implement mutual Transport Layer Security (mTLS) for secure communication between services. Essentially, mTLS establishes a secure tunnel between two services, encrypting the network traffic with dedicated certificates. This encryption ensures that potential eavesdroppers are unable to intercept or decipher the communications, thereby enhancing the security and integrity of data exchanges.
+
+This advanced security protocol will be facilitated by Istio, a powerful service mesh that provides comprehensive solutions for managing and securing microservices. Istio not only simplifies the implementation of mTLS but also offers additional features such as traffic management, observability, and policy enforcement, making it an ideal choice for securing our Kubernetes cluster. By leveraging Istio's capabilities, we can ensure that our inter-service communications are both secure and efficiently managed.
+
+===== Logging and monitoring
+
+Logging and monitoring are crucial aspects of any distributed system, as they provide valuable insights into the system's behavior and performance. In the context of our Kubernetes cluster, we will implement logging and monitoring solutions to capture and analyze system events, errors, and performance metrics.
+We will be using Istio as a Gateway for our services, which will enable us to collect and analyze traffic flows and performance metrics. This will help us identify bottlenecks, optimize resource allocation, and ensure the overall health and reliability of our system.
+
+Aditionally, Istio provides a rich set of observability features, such as distributed tracing, log collection, and metrics aggregation. These features will enable us to gain deeper insights into the behavior of our services and identify areas for improvement.
+
+We can pick any backend for our logging and monitoring solutions, so we will be using Jaegger for traces, Loki for logs and Prometheus for metrics. We will configure these services to use our external storage servers for data retention.
+
+===== Deployment
+
+For continuous deployment, we will be using ArgoCD, a powerful and flexible deployment tool that simplifies the process of managing and deploying applications across multiple environments. ArgoCD allows us to define workflows for deploying our applications, managing their lifecycles, and ensuring consistent deployments across different environments.
+
+Each resources in Kubernetes will be deployed using Helm and will be declared as a ArgoCDP application to keep a declarative approach to deployment. This will allow us to easily manage and update our applications, ensuring consistency and reducing the risk of human error.
+
+Here is an example of a deployment workflow for an ArgoCD setup : https://github.com/Courtcircuits/cluster
+
+
+===== Secret management
+
+For secret management, we will be using sealed-secrets, a Kubernetes controller that allows us to store and manage secrets in a centralized location. This will ensure that sensitive information, such as database credentials, API keys, and other sensitive data, is securely stored and managed while keeping a Gitops approach to the project.
